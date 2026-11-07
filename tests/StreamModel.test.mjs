@@ -119,3 +119,10 @@ test("fixSucceeded › pw-cli reports errors with exit code 0", () => {
   assert.equal(SM.fixSucceeded(0, "Error: \"set-param: unknown global '999999'\"\n"), false);
   assert.equal(SM.fixSucceeded(1, ""), false);
 });
+
+test("liveVolume › follows live channel volume, uses polled global", () => {
+  const s = { global: 0.25, channels: [0.736, 0.736] };
+  assert.equal(SM.liveVolume(s, 0.5, false), 0.125);
+  assert.equal(SM.liveVolume(s, 0.5, true), 0.5);
+  assert.equal(SM.liveVolume(undefined, 0.8, false), 0.8);
+});

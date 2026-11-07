@@ -56,6 +56,13 @@ function realVolume(s) {
   return s.channels && s.channels.length ? s.global * mean(s.channels) : s.global
 }
 
+// Volume affiché par le curseur : canaux en direct (shell) × global relevé par pw-dump.
+// globalFixed : une correction du global vient d'être demandée, on le suppose à 1.
+function liveVolume(s, liveChannels, globalFixed) {
+  if (!s || globalFixed) return liveChannels
+  return s.global * liveChannels
+}
+
 function balance(s) {
   if (!s.channels || s.channels.length !== 2) return 0
   var l = s.channels[0], r = s.channels[1], m = Math.max(l, r)
@@ -113,6 +120,6 @@ if (typeof module !== "undefined") {
   module.exports = {
     parseDump: parseDump, realVolume: realVolume, balance: balance, warnings: warnings,
     anyBarWarning: anyBarWarning, label: label, detail: detail, explain: explain,
-    isValidId: isValidId, matches: matches, pct: pct, fixSucceeded: fixSucceeded
+    isValidId: isValidId, matches: matches, pct: pct, fixSucceeded: fixSucceeded, liveVolume: liveVolume
   }
 }

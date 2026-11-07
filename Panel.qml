@@ -1316,12 +1316,15 @@ Panel {
     readonly property bool isActive: root.streamRepresentsPlayer(node, root.activeMediaPlayer)
     readonly property var info: root.detailsFor(node)
     readonly property var codes: info ? SM.warnings(info) : []
-    readonly property real shownVolume: info ? SM.realVolume(info) : streamVolume
+    // Canaux en direct depuis le shell (fluide pendant un glissement), global relevé par pw-dump.
+    property bool globalFixPending: false
+    readonly property real shownVolume: SM.liveVolume(info, streamVolume, globalFixPending)
+    onInfoChanged: if (info && info.global >= 0.98) globalFixPending = false
     property bool fixedThisDrag: false
 
     function fixCode(code) {
       if (!node || !node.audio) return
-      if (code === "hiddenGlobal") fixer.setGlobal(node.id, 1.0)
+      if (code === "hiddenGlobal") { globalFixPending = true; fixer.setGlobal(node.id, 1.0) }
       else if (code === "imbalance") node.audio.volume = node.audio.volume
       else if (code === "muted") node.audio.muted = false
       details.refresh()
@@ -1413,6 +1416,7 @@ Panel {
           // (une seule fois par geste) et le niveau voulu passe par les canaux.
           if (streamRow.info && streamRow.info.global < 0.98 && !streamRow.fixedThisDrag) {
             streamRow.fixedThisDrag = true
+            streamRow.globalFixPending = true
             fixer.setGlobal(streamRow.node.id, 1.0)
           }
           streamRow.node.audio.volume = v
