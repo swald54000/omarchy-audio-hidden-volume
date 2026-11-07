@@ -8,6 +8,7 @@ import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
 import "Model.js" as Model
+import "StreamModel.js" as SM
 
 Panel {
   id: root
@@ -661,7 +662,10 @@ Panel {
 
   PwObjectTracker { objects: root.candidateSinks }
   PwObjectTracker { objects: root.candidateSources }
-  PwObjectTracker { objects: root.audioStreams }
+  // swald.audio : suivre tous les flux candidats, pas seulement ceux déjà liés.
+  // audioStreams ne garde que les nœuds qui ont déjà `.audio` ; en ne suivant qu'eux,
+  // un nouveau flux (pw-play, paplay, ChatGPT…) n'était jamais lié ni affiché.
+  PwObjectTracker { objects: root.candidateStreams }
 
   PwNodePeakMonitor {
     id: inputPeakMonitor
@@ -727,6 +731,26 @@ Panel {
 
   Component.onCompleted: root.resolveVolumeSink()
 
+  // ---- swald.audio : volumes cachés des flux (pw-dump) et correction (pw-cli) ----
+  StreamDetails { id: details; fast: root.opened }
+  StreamFix {
+    id: fixer
+    onDone: function(id, ok) {
+      var f = Object.assign({}, root.fixFailed)
+      f[id] = !ok
+      root.fixFailed = f
+      details.refresh()
+    }
+  }
+  property var fixFailed: ({})
+  readonly property color warnColor: "#e0af68"
+
+  function detailsFor(node) {
+    if (!node) return undefined
+    var s = details.byId[String(node.id)]
+    return SM.matches(s, String(node.name)) ? s : undefined
+  }
+
   Timer {
     id: audioModelRefreshTimer
     interval: 75
@@ -739,6 +763,17 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: root.outputIcon()
+
+    Text {
+      textFormat: Text.PlainText
+      text: "⚠"
+      color: root.warnColor
+      font.pixelSize: Style.font.caption
+      anchors.top: parent.top
+      anchors.right: parent.right
+      visible: details.available && details.anyWarning
+    }
+
     onPressed: function(b) {
       if (b === Qt.RightButton) root.toggleAllMuted()
       else root.toggle()
@@ -762,7 +797,7 @@ Panel {
     open: root.opened
     focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(820))
 
     content: PanelKeyCatcher {
       id: keyCatcher
@@ -908,6 +943,18 @@ Panel {
                 fontFamily: root.bar.fontFamily
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "via EasyEffects"
+                color: Qt.darker(root.bar.foreground, 1.5)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                anchors.left: outputHeader.right
+                anchors.leftMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                visible: !!root.sink && String(root.sink.name) === "easyeffects_sink"
               }
 
               Text {
@@ -1103,6 +1150,15 @@ Panel {
               fontFamily: root.bar.fontFamily
             }
 
+            Text {
+              textFormat: Text.PlainText
+              text: "détails indisponibles"
+              color: Qt.darker(root.bar.foreground, 1.5)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              visible: !details.available
+            }
+
             Repeater {
               model: root.displayAudioStreams
 
@@ -1258,6 +1314,18 @@ Panel {
     readonly property real streamVolume: node && node.audio ? node.audio.volume : 0
     readonly property bool streamMuted: node && node.audio ? node.audio.muted : false
     readonly property bool isActive: root.streamRepresentsPlayer(node, root.activeMediaPlayer)
+    readonly property var info: root.detailsFor(node)
+    readonly property var codes: info ? SM.warnings(info) : []
+    readonly property real shownVolume: info ? SM.realVolume(info) : streamVolume
+    property bool fixedThisDrag: false
+
+    function fixCode(code) {
+      if (!node || !node.audio) return
+      if (code === "hiddenGlobal") fixer.setGlobal(node.id, 1.0)
+      else if (code === "imbalance") node.audio.volume = node.audio.volume
+      else if (code === "muted") node.audio.muted = false
+      details.refresh()
+    }
 
     hasCursor: root.cursorActive && root.focusSection === "streams" && root.selectedIndex === rowIndex
     onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(streamRow)
@@ -1304,7 +1372,8 @@ Panel {
 
         Text {
           textFormat: Text.PlainText
-          text: root.streamLabel(streamRow.node)
+          text: (streamRow.codes.length > 0 ? "⚠ " : "")
+                + (streamRow.info ? SM.label(streamRow.info) : root.streamLabel(streamRow.node))
           color: root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.body
@@ -1317,7 +1386,7 @@ Panel {
         Text {
           id: streamPct
           textFormat: Text.PlainText
-          text: Commons.I18n.formatNumber(Math.round(streamRow.streamVolume * 100)) + "%"
+          text: Commons.I18n.formatNumber(Math.round(streamRow.shownVolume * 100)) + "%"
           color: Qt.darker(root.bar.foreground, 1.5)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
@@ -1335,15 +1404,71 @@ Panel {
         minimum: 0
         maximum: 1.5
         step: 0.05
-        value: streamRow.streamVolume
+        value: streamRow.shownVolume
         opacity: streamRow.streamMuted ? 0.5 : 1.0
 
         onMoved: function(v) {
-          if (streamRow.node && streamRow.node.audio) streamRow.node.audio.volume = v
+          if (!streamRow.node || !streamRow.node.audio) return
+          // Le curseur règle le volume réel : le volume global caché revient à 100 %
+          // (une seule fois par geste) et le niveau voulu passe par les canaux.
+          if (streamRow.info && streamRow.info.global < 0.98 && !streamRow.fixedThisDrag) {
+            streamRow.fixedThisDrag = true
+            fixer.setGlobal(streamRow.node.id, 1.0)
+          }
+          streamRow.node.audio.volume = v
         }
+        onReleased: function(v) { streamRow.fixedThisDrag = false }
         onRightClicked: {
           if (streamRow.node && streamRow.node.audio)
             streamRow.node.audio.muted = !streamRow.node.audio.muted
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        text: streamRow.info ? SM.detail(streamRow.info) : ""
+        color: Qt.darker(root.bar.foreground, 1.5)
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+        visible: !!streamRow.info
+      }
+
+      Repeater {
+        model: streamRow.codes
+        Row {
+          required property string modelData
+          width: streamColumn.width
+          spacing: Style.space(8)
+
+          Text {
+            width: parent.width - fixLink.width - Style.space(8)
+            textFormat: Text.PlainText
+            text: streamRow.info ? SM.explain(modelData, streamRow.info) : ""
+            color: root.warnColor
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
+          }
+
+          Text {
+            id: fixLink
+            textFormat: Text.PlainText
+            text: root.fixFailed[streamRow.node ? streamRow.node.id : -1] && modelData === "hiddenGlobal"
+                  ? "Échec de la correction — réessayer" : "Corriger"
+            color: root.warnColor
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            font.underline: true
+            font.bold: true
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: streamRow.fixCode(modelData)
+            }
+          }
         }
       }
     }
