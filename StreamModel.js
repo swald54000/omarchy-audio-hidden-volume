@@ -102,12 +102,17 @@ function explain(code, s) {
 
 function isValidId(id) { return /^[0-9]{1,10}$/.test(String(id)) }
 
+// pw-cli renvoie 0 même en cas d'échec ; il signale l'erreur par une ligne « Error: … ».
+function fixSucceeded(exitCode, output) {
+  return exitCode === 0 && !/(^|\n)\s*Error:/.test(String(output || ""))
+}
+
 function matches(s, nodeName) { return !!s && s.nodeName === nodeName }
 
 if (typeof module !== "undefined") {
   module.exports = {
     parseDump: parseDump, realVolume: realVolume, balance: balance, warnings: warnings,
     anyBarWarning: anyBarWarning, label: label, detail: detail, explain: explain,
-    isValidId: isValidId, matches: matches, pct: pct
+    isValidId: isValidId, matches: matches, pct: pct, fixSucceeded: fixSucceeded
   }
 }

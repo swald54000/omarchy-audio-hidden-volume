@@ -113,3 +113,9 @@ test("matches only same node name", () => {
   assert.equal(SM.matches(s, "Firefox"), false);
   assert.equal(SM.matches(undefined, "x"), false);
 });
+
+test("fixSucceeded › pw-cli reports errors with exit code 0", () => {
+  assert.equal(SM.fixSucceeded(0, "Object: size 32, type Spa:Pod:Object:Param:Props\n  Float 1,000000\n"), true);
+  assert.equal(SM.fixSucceeded(0, "Error: \"set-param: unknown global '999999'\"\n"), false);
+  assert.equal(SM.fixSucceeded(1, ""), false);
+});
