@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "id": "swald.audio",
-  "name": "My Audio",
+  "name": "Audio (volumes cachés)",
   "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Volume slider, output picker, per-app mixer",
+  "author": "Sébastien Wald",
+  "description": "Volume, choix de sortie, mixeur par application ; détecte et corrige les volumes globaux cachés des flux PipeWire",
   "kinds": [
     "bar-widget"
   ],
@@ -12,8 +12,8 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "My Audio",
-    "description": "Volume slider, output picker, per-app mixer",
+    "displayName": "Audio (volumes cachés)",
+    "description": "Volume, choix de sortie, mixeur par application ; détecte et corrige les volumes globaux cachés des flux PipeWire",
     "category": "Audio",
     "allowMultiple": false
   },
